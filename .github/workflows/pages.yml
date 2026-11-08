@@ -41,14 +41,8 @@ jobs:
           };
           CONFIG
           else
-            cat > dist/js/config.js <<'CONFIG'
-          window.YUEJI_CONFIG = {
-            mode: 'browser',
-            supabaseUrl: '',
-            supabaseAnonKey: '',
-            phoneEmailDomain: 'phone.yueji.app'
-          };
-          CONFIG
+            # Use the committed js/config.js (browser by default).
+            echo "Using committed js/config.js"
           fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
