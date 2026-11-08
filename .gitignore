@@ -1,0 +1,9 @@
+.DS_Store
+node_modules/
+data/yueji.db
+data/yueji.db-wal
+data/yueji.db-shm
+__pycache__/
+*.pyc
+dist/
+yueji-pages.zip

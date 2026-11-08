@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="YUEJI Demo" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+<metadata><name>西湖群山徒步</name><time>2026-10-25T01:00:00Z</time></metadata>
+<trk><name>西湖群山徒步</name><type>hiking</type><trkseg>
+<trkpt lat="30.245000" lon="120.145000"><ele>20.0</ele><time>2026-10-25T09:00:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.250000" lon="120.148500"><ele>42.0</ele><time>2026-10-25T09:10:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.255000" lon="120.152000"><ele>64.0</ele><time>2026-10-25T09:20:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.260000" lon="120.155500"><ele>86.0</ele><time>2026-10-25T09:30:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.265000" lon="120.159000"><ele>108.0</ele><time>2026-10-25T09:40:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.270000" lon="120.162500"><ele>130.0</ele><time>2026-10-25T09:50:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.275000" lon="120.166000"><ele>152.0</ele><time>2026-10-25T10:00:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.280000" lon="120.169500"><ele>174.0</ele><time>2026-10-25T10:10:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.285000" lon="120.173000"><ele>196.0</ele><time>2026-10-25T10:20:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.290000" lon="120.176500"><ele>218.0</ele><time>2026-10-25T10:30:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.295000" lon="120.180000"><ele>240.0</ele><time>2026-10-25T10:40:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.300000" lon="120.183500"><ele>262.0</ele><time>2026-10-25T10:50:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+<trkpt lat="30.305000" lon="120.187000"><ele>284.0</ele><time>2026-10-25T11:00:00Z</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>160</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
+</trkseg></trk></gpx>

@@ -1,0 +1,11 @@
+{
+  "name": "yueji-fitness-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "跃迹 YUEJI — 运动记录、训练负荷与指引看板（Python + SQLite 本地后端）",
+  "scripts": {
+    "start": "python3 server.py",
+    "test": "node tests/fit-parser.test.mjs"
+  }
+}

@@ -1,0 +1,66 @@
+name: Deploy YUEJI to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble static site
+        env:
+          YUEJI_MODE: ${{ vars.YUEJI_MODE || 'browser' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          mkdir -p dist
+          touch dist/.nojekyll
+          cp index.html dist/
+          cp -R css js vendor assets dist/
+          if [ "$YUEJI_MODE" = "supabase" ]; then
+            test -n "$SUPABASE_URL"
+            test -n "$SUPABASE_ANON_KEY"
+            cat > dist/js/config.js <<CONFIG
+          window.YUEJI_CONFIG = {
+            mode: 'supabase',
+            supabaseUrl: '${SUPABASE_URL}',
+            supabaseAnonKey: '${SUPABASE_ANON_KEY}',
+            phoneEmailDomain: 'phone.yueji.app'
+          };
+          CONFIG
+          else
+            cat > dist/js/config.js <<'CONFIG'
+          window.YUEJI_CONFIG = {
+            mode: 'browser',
+            supabaseUrl: '',
+            supabaseAnonKey: '',
+            phoneEmailDomain: 'phone.yueji.app'
+          };
+          CONFIG
+          fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
