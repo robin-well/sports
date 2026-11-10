@@ -3,10 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0a0d0b">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1411">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f6f1">
+  <meta name="color-scheme" content="dark light">
   <meta name="description" content="跃迹 YUEJI — 记录每一次运动，读懂身体趋势，获得属于你的训练指引。">
   <title>跃迹 YUEJI · 运动看板</title>
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <script>
+    (() => {
+      const forced = new URLSearchParams(location.search).get('theme');
+      const media = window.matchMedia('(prefers-color-scheme: light)');
+      const apply = () => {
+        document.documentElement.dataset.theme = forced === 'light' || forced === 'dark'
+          ? forced
+          : (media.matches ? 'light' : 'dark');
+      };
+      apply();
+      media.addEventListener?.('change', apply);
+    })();
+  </script>
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>

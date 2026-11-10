@@ -1090,7 +1090,6 @@ function navigate(route) {
 
 function renderShell() {
   const user = state.user;
-  const browserMode = api.mode === 'browser';
   const guidance = computeGuidance(user, state.activities, state.weights);
   const snap = guidance.snapshot;
   const meta = ROUTE_META[state.route] || ROUTE_META.overview;
@@ -1112,18 +1111,6 @@ function renderShell() {
 
   if (state.route === 'leaderboard') ensureLeaderboard();
 
-  const sideCard = browserMode ? `
-    <div class="side-card side-card--sync">
-      <div class="side-card-icon">${icon('shield', 19)}</div>
-      <div><strong>本机已保存</strong><span>仅保存在当前浏览器</span></div>
-      ${icon('check', 15)}
-    </div>` : `
-    <div class="side-card side-card--sync">
-      <div class="side-card-icon">${icon('cloud', 19)}</div>
-      <div><strong>云端已同步</strong><span>数据保存于账号服务端</span></div>
-      ${icon('check', 15)}
-    </div>`;
-
   app.innerHTML = `
     <div class="shell">
       <aside class="sidebar">
@@ -1142,7 +1129,6 @@ function renderShell() {
           <a href="#/guidance" class="side-focus-link" data-action="navigate" data-route="guidance">查看训练指引 ${icon('arrow', 14)}</a>
         </div>
         <div class="side-bottom">
-          ${sideCard}
           <a class="side-user" href="#/profile" data-action="navigate" data-route="profile">
             <span class="avatar">${esc(initial)}</span>
             <span class="side-user-text"><strong>${esc(user.nickname)}</strong><em>${esc(goal.label)}</em></span>
@@ -1162,10 +1148,7 @@ function renderShell() {
             <strong>${meta.en}</strong>
           </div>
           <div class="topbar-actions">
-            <button class="icon-btn hide-sm" data-action="notification" aria-label="通知">${icon('bell', 19)}<i class="dot"></i></button>
-            <button class="icon-btn mobile-only" data-action="open-import" aria-label="导入数据">${icon('upload', 18)}</button>
-            <button class="btn btn-ghost hide-sm" data-action="open-import">${icon('upload', 17)} 导入数据</button>
-            <button class="btn btn-primary" data-action="add-record">${icon('plus', 17)} <span>记录运动</span></button>
+            <button class="btn btn-primary topbar-record" data-action="add-record">${icon('plus', 17)} <span>记录运动</span></button>
             <a class="avatar avatar--top" href="#/profile" data-action="navigate" data-route="profile" aria-label="个人中心">${esc(initial)}</a>
           </div>
         </header>
@@ -1173,7 +1156,7 @@ function renderShell() {
       </div>
 
       <nav class="mobile-nav" aria-label="移动端导航">
-        ${navItems.map(([route, ico, label]) => `
+        ${navItems.filter(([route]) => route !== 'guidance').map(([route, ico, label]) => `
           <a href="#/${route}" class="mobile-nav-item ${state.route === route ? 'active' : ''}" data-action="navigate" data-route="${route}">
             ${icon(ico, 21)}<span>${({ overview: '总览', records: '记录', analytics: '数据', guidance: '指引', leaderboard: '互动', profile: '我的' })[route]}</span>
           </a>`).join('')}
@@ -1281,7 +1264,7 @@ function renderOverview(guidance) {
           </div>
         </article>
 
-        <aside class="week-card">
+        <aside class="week-card" style="--week-progress:${Math.round(guidance.progress * 100)}%">
           <div class="panel-head">
             <div><span class="eyebrow">THIS WEEK</span><h3>本周训练</h3></div>
             <span class="week-status ${snap.minutes >= guidance.target ? 'done' : ''}">${snap.minutes >= guidance.target ? '已达标' : '进行中'}</span>
@@ -1348,7 +1331,7 @@ function renderOverview(guidance) {
 
       ${renderCalendar(guidance)}
 
-      <section class="section-block">
+      <section class="section-block overview-sports">
         <div class="section-head">
           <div><span class="eyebrow">SPORTS LIBRARY</span><h2>运动板块</h2><p>各项目的累计里程、训练次数与最近状态</p></div>
           <a class="text-link" href="#/records" data-action="navigate" data-route="records">全部记录 ${icon('arrow', 15)}</a>
@@ -1358,7 +1341,7 @@ function renderOverview(guidance) {
         </div>
       </section>
 
-      <div class="dashboard-bottom">
+      <div class="dashboard-bottom overview-extra">
         <article class="panel chart-panel">
           <div class="panel-head">
             <div><span class="eyebrow">TRAINING LOAD</span><h3>周训练量</h3></div>
@@ -1822,7 +1805,6 @@ function renderAnalytics() {
             <div class="weight-now">
               <span>当前</span><strong>${currentWeight ? currentWeight.toFixed(1) : '—'} <em>kg</em></strong>
               <span class="pill pill--sm ${bmiMeta.tone === 'lime' ? 'pill--lime' : ''}">BMI ${bmi ? bmi.toFixed(1) : '—'} · ${bmiMeta.label}</span>
-              <button type="button" class="text-link" data-action="add-weight">${icon('plus', 12)} 记录</button>
             </div>
           </div>
           <div class="chart-wrap">${lineChart({
@@ -2084,7 +2066,6 @@ function renderProfile() {
               <span class="pill pill--goal">${icon(goal.icon, 14)} ${goal.label}</span>
               <span class="pill">${icon('flame', 14)} 连续 ${currentStreak(state.activities)} 天</span>
               <span class="pill">${icon('body', 14)} ${user.height} cm</span>
-              <button type="button" class="pill pill--action" data-action="add-weight">${icon('plus', 13)} 记录体重</button>
             </div>
             <div class="account-snapshot">
               <div><span>当前体重</span><strong>${currentWeight ? currentWeight.toFixed(1) : '—'} <em>kg</em></strong></div>
@@ -2092,30 +2073,6 @@ function renderProfile() {
               <div><span>目标摄入</span><strong>${plan ? plan.target : '—'} <em>kcal</em></strong></div>
             </div>
           </article>
-
-          <article class="panel sync-card">
-            <div class="sync-head">
-              <span class="sync-logo">${icon(browserMode ? 'shield' : 'cloud', 24)}</span>
-              <div><h3>${browserMode ? '本机存储' : '云端同步'}</h3><p>${browserMode ? '数据只保存在当前浏览器' : cloudMode ? '账号数据已保存到 Supabase' : '账号数据已保存到本地服务端'}</p></div>
-              <span class="sync-badge">${browserMode ? '仅此设备' : '已连接'}</span>
-            </div>
-            <div class="sync-status">
-              <span>${icon(browserMode ? 'body' : 'phone', 14)} ${browserMode ? '本机账号' : maskPhone(user.phone)}</span>
-              <span>${browserMode ? '浏览器 localStorage' : cloudMode ? 'Supabase · Postgres' : 'SQLite · 服务端存储'}</span>
-            </div>
-            <small class="sync-note">${browserMode ? '换设备或清理浏览器数据会丢失，请定期导出 JSON 备份。' : '同一手机号可在不同浏览器登录，数据自动同步。'}</small>
-          </article>
-
-          ${cloudMode ? `<article class="panel security-card">
-            <div class="panel-head">
-              <div><span class="eyebrow">SECURITY</span><h3>账号安全</h3></div>
-              <span class="panel-note">Supabase Auth</span>
-            </div>
-            <div class="security-row">
-              <div><strong>登录密码</strong><em>定期更换密码，保护你的训练数据。</em></div>
-              <button type="button" class="text-link" data-action="change-password">${icon('shield', 14)} 修改密码</button>
-            </div>
-          </article>` : ''}
 
           <article class="panel data-card">
             <div class="panel-head"><div><span class="eyebrow">DATA</span><h3>数据管理</h3></div></div>
@@ -2207,16 +2164,6 @@ function renderProfile() {
             <p class="balance-tip">${icon('info', 14)} 基于 Mifflin-St Jeor 公式与训练频率估算。</p>
           </article>
 
-
-          <article class="about-card">
-            <div class="about-mark">${logoMark(30)}</div>
-            <div>
-              <strong>跃迹 YUEJI · ${browserMode ? '本机版' : cloudMode ? 'Supabase 版本' : '本地版本'}</strong>
-              <p>${browserMode ? '无登录，数据保存在当前浏览器；支持 JSON 导入导出，不会上传到服务器。' : cloudMode ? '账号与运动数据保存在 Supabase Auth + Postgres；密码加密存储，不发送短信。' : '账号与运动数据保存在本地服务端 SQLite；验证码为开发环境固定值，正式上线需接入短信服务。'}</p>
-            </div>
-          </article>
-        </div>
-      </div>
 
           <article class="panel achievements-card">
             <div class="panel-head">
