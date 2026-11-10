@@ -87,6 +87,7 @@ as $$
    and a.deleted_at is null
    and a.date between p_start and p_end
   where p.leaderboard_opt_in is true
+    and auth.uid() is not null
   group by p.user_id, p.nickname
   having count(a.id) > 0
   order by minutes desc, load desc, p.nickname asc
@@ -94,4 +95,5 @@ as $$
 $$;
 
 revoke all on function public.get_leaderboard(date, date) from public;
+revoke all on function public.get_leaderboard(date, date) from anon;
 grant execute on function public.get_leaderboard(date, date) to authenticated;
