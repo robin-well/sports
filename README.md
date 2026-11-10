@@ -52,6 +52,7 @@ window.YUEJI_CONFIG = {
 
 - 手机号作为登录名，Supabase Email/Password Auth（内部映射 email，不发短信）
 - 数据存 Supabase Postgres，带 RLS
+- 互动榜需要额外执行 [`supabase/migrations/20261110_social.sql`](supabase/migrations/20261110_social.sql)
 - 完整步骤：[`supabase/README.md`](supabase/README.md)
 - 在 GitHub Actions 添加 `SUPABASE_URL`、`SUPABASE_ANON_KEY` Secrets，并设置仓库变量 `YUEJI_MODE=supabase`，工作流会生成对应配置。
 
@@ -171,6 +172,8 @@ python3 server.py
 - **最近记录**、**周训练量柱状图**。
 - 每条记录可查看详情、编辑、删除；详情页展示心率过程曲线、心率区间分布，以及设备 GPS 生成的轨迹图。
 - 力量训练支持动作明细：动作名称、训练部位、组数、每组次数和重量，自动计算训练容量；数据分析中增加按部位统计的组数/容量分布。
+- 单条训练可生成分享文案，支持系统分享或复制到剪贴板（不包含 GPS、备注等隐私内容）。
+- Supabase 模式下提供训练互动榜：按本周训练时长/负荷排名，可点赞、留言；可关闭自己的排行榜参与。
 - 有 GPS 的记录支持导出 GPX，可导入 Strava、Garmin、OSM 等平台继续查看。
 - 轨迹图可点击「地图底图」加载 OpenStreetMap，查看真实地图环境；不点击时只显示本地轨迹。
 
@@ -351,7 +354,7 @@ node tests/fit-parser.test.mjs
 │   └── yueji.db            # 运行时 SQLite（首次启动生成，已 gitignore）
 ├── assets/demo-seed.json   # 无登录模式示例数据
 ├── sample-data/            # 可上传的示例运动文件
-├── supabase/               # schema.sql + 部署指南
+├── supabase/               # schema.sql + migrations + 部署指南
 ├── vendor/                 # 本地化的 Supabase JS SDK
 ├── .github/workflows/      # GitHub Pages 自动部署
 ├── docs/                   # 页面预览截图

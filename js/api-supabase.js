@@ -49,7 +49,8 @@ function mapProfile(row) {
     weight: numberOrNull(row.weight),
     goal: row.goal || null,
     freq: numberOrNull(row.freq),
-    level: row.level || null
+    level: row.level || null,
+    leaderboardOptIn: row.leaderboard_opt_in !== false
   };
 }
 
@@ -178,6 +179,7 @@ export function createSupabaseApi(config) {
       goal: profile?.goal || null,
       freq: numberOrNull(profile?.freq),
       level: profile?.level || null,
+      leaderboard_opt_in: profile?.leaderboardOptIn !== false,
       updated_at: new Date().toISOString()
     };
     const { error } = await supabase.from('profiles').upsert(row, { onConflict: 'user_id' });
@@ -350,6 +352,73 @@ export function createSupabaseApi(config) {
     return { ok: true };
   }
 
+  async function getLeaderboard(start, end) {
+    await sessionOrThrow();
+    const { data, error } = await supabase.rpc('get_leaderboard', { p_start: start, p_end: end });
+    if (error) rethrow(error, '读取排行榜失败');
+    return data || [];
+  }
+
+  async function toggleLike(toUser, weekStart) {
+    const session = await sessionOrThrow();
+    const { data: existing, error: readError } = await supabase
+      .from('leaderboard_likes')
+      .select('from_user')
+      .eq('from_user', session.user.id)
+      .eq('to_user', toUser)
+      .eq('week_start', weekStart)
+      .maybeSingle();
+    if (readError) rethrow(readError, '读取点赞失败');
+    if (existing) {
+      const { error } = await supabase.from('leaderboard_likes').delete()
+        .eq('from_user', session.user.id).eq('to_user', toUser).eq('week_start', weekStart);
+      if (error) rethrow(error, '取消点赞失败');
+      return { liked: false };
+    }
+    const { error } = await supabase.from('leaderboard_likes').insert({
+      from_user: session.user.id,
+      to_user: toUser,
+      week_start: weekStart
+    });
+    if (error) rethrow(error, '点赞失败');
+    return { liked: true };
+  }
+
+  async function getComments(toUser, weekStart) {
+    const session = await sessionOrThrow();
+    const { data, error } = await supabase
+      .from('leaderboard_comments')
+      .select('id,from_user,to_user,week_start,author_nickname,body,created_at')
+      .eq('to_user', toUser)
+      .eq('week_start', weekStart)
+      .order('created_at', { ascending: true });
+    if (error) rethrow(error, '读取留言失败');
+    return (data || []).map((c) => ({ ...c, isMine: c.from_user === session.user.id }));
+  }
+
+  async function addComment(toUser, weekStart, body, nickname) {
+    const session = await sessionOrThrow();
+    const text = String(body || '').trim().slice(0, 240);
+    if (!text) throw fail('留言不能为空', 400);
+    const { data, error } = await supabase.from('leaderboard_comments').insert({
+      from_user: session.user.id,
+      to_user: toUser,
+      week_start: weekStart,
+      author_nickname: String(nickname || '训练伙伴').slice(0, 20),
+      body: text
+    }).select('id,from_user,to_user,week_start,author_nickname,body,created_at').single();
+    if (error) rethrow(error, '发送留言失败');
+    return { ...data, isMine: true };
+  }
+
+  async function deleteComment(id) {
+    const session = await sessionOrThrow();
+    const { error } = await supabase.from('leaderboard_comments').delete()
+      .eq('id', id).eq('from_user', session.user.id);
+    if (error) rethrow(error, '删除留言失败');
+    return { ok: true };
+  }
+
   async function clearData() {
     const session = await sessionOrThrow();
     const { error: activityError } = await supabase.from('activities').delete().eq('user_id', session.user.id);
@@ -375,6 +444,11 @@ export function createSupabaseApi(config) {
     bulkActivities,
     addWeight,
     changePassword,
+    getLeaderboard,
+    toggleLike,
+    getComments,
+    addComment,
+    deleteComment,
     loadSample: () => Promise.reject(fail('Supabase 模式请使用 JSON 导入示例数据', 400)),
     clearData,
     exportData: async () => {

@@ -36,6 +36,12 @@ const state = {
   onboarding: null,
   authTab: 'login',
   importData: null,
+  leaderboard: null,
+  leaderboardWeek: null,
+  leaderboardLoading: false,
+  leaderboardError: null,
+  leaderboardMetric: 'minutes',
+  commentsTarget: null,
   mapInstance: null,
   codeTimer: null,
   devCode: '123456'
@@ -46,6 +52,7 @@ const ROUTE_META = {
   records: { label: '运动记录', en: 'TRAINING LOG' },
   analytics: { label: '数据分析', en: 'ANALYTICS' },
   guidance: { label: '运动指引', en: 'COACHING' },
+  leaderboard: { label: '互动榜', en: 'LEADERBOARD' },
   profile: { label: '我的', en: 'PROFILE' }
 };
 
@@ -75,6 +82,10 @@ function applyBootstrap(data) {
   state.weights = (Array.isArray(data.weights) ? data.weights : []).sort((a, b) => String(a.date).localeCompare(String(b.date)));
   state.serverError = null;
   state.booting = false;
+  state.leaderboard = null;
+  state.leaderboardWeek = null;
+  state.leaderboardError = null;
+  state.leaderboardLoading = false;
 }
 
 async function refreshBootstrap() {
@@ -226,6 +237,46 @@ async function onDocumentClick(e) {
       e.preventDefault();
       actionEl.closest('[data-strength-row]')?.remove();
       updateStrengthTotal();
+      break;
+    }
+    case 'leaderboard-metric': {
+      e.preventDefault();
+      state.leaderboardMetric = actionEl.dataset.metric === 'load' ? 'load' : 'minutes';
+      render();
+      break;
+    }
+    case 'reload-leaderboard': {
+      e.preventDefault();
+      state.leaderboard = null;
+      state.leaderboardWeek = null;
+      state.leaderboardError = null;
+      state.leaderboardLoading = false;
+      render();
+      break;
+    }
+    case 'like-entry': {
+      e.preventDefault();
+      toggleLeaderboardLike(actionEl);
+      break;
+    }
+    case 'open-comments': {
+      e.preventDefault();
+      openComments(actionEl.dataset.user, actionEl.dataset.week, actionEl.dataset.nickname || '训练伙伴');
+      break;
+    }
+    case 'delete-comment': {
+      e.preventDefault();
+      deleteComment(actionEl.dataset.id);
+      break;
+    }
+    case 'share-record': {
+      e.preventDefault();
+      shareRecord(id);
+      break;
+    }
+    case 'share-app': {
+      e.preventDefault();
+      shareApp();
       break;
     }
     case 'quick-add': {
@@ -449,6 +500,9 @@ function onDocumentSubmit(e) {
   } else if (form.id === 'password-form') {
     e.preventDefault();
     handlePasswordChange(form);
+  } else if (form.id === 'comment-form') {
+    e.preventDefault();
+    handleCommentSubmit(form);
   }
 }
 
@@ -655,6 +709,9 @@ async function logout() {
   state.weights = [];
   state.route = 'overview';
   state.onboarding = null;
+  state.leaderboard = null;
+  state.leaderboardWeek = null;
+  state.leaderboardError = null;
   history.replaceState(null, '', '#/');
   render();
   toast('已退出登录', 'success');
@@ -1045,12 +1102,15 @@ function renderShell() {
     ['records', 'list', '运动记录'],
     ['analytics', 'chart', '数据分析'],
     ['guidance', 'compass', '运动指引'],
+    ...(api.mode === 'supabase' ? [['leaderboard', 'trophy', '互动榜']] : []),
     ['profile', 'user', '我的']
   ];
   const navHTML = navItems.map(([route, ico, label]) => `
     <a href="#/${route}" class="nav-item ${state.route === route ? 'active' : ''}" data-action="navigate" data-route="${route}">
       ${icon(ico, 20)}<span>${label}</span><i class="nav-dot"></i>
     </a>`).join('');
+
+  if (state.route === 'leaderboard') ensureLeaderboard();
 
   const sideCard = browserMode ? `
     <div class="side-card side-card--sync">
@@ -1115,7 +1175,7 @@ function renderShell() {
       <nav class="mobile-nav" aria-label="移动端导航">
         ${navItems.map(([route, ico, label]) => `
           <a href="#/${route}" class="mobile-nav-item ${state.route === route ? 'active' : ''}" data-action="navigate" data-route="${route}">
-            ${icon(ico, 21)}<span>${({ overview: '总览', records: '记录', analytics: '数据', guidance: '指引', profile: '我的' })[route]}</span>
+            ${icon(ico, 21)}<span>${({ overview: '总览', records: '记录', analytics: '数据', guidance: '指引', leaderboard: '互动', profile: '我的' })[route]}</span>
           </a>`).join('')}
         <button class="mobile-add" data-action="add-record" aria-label="记录运动">${icon('plus', 24)}</button>
       </nav>
@@ -1127,6 +1187,7 @@ function renderView(guidance) {
     case 'records': return renderRecords();
     case 'analytics': return renderAnalytics();
     case 'guidance': return renderGuidance(guidance);
+    case 'leaderboard': return renderLeaderboard(guidance);
     case 'profile': return renderProfile();
     default: return renderOverview(guidance);
   }
@@ -2121,6 +2182,11 @@ function renderProfile() {
                     ${LEVELS.map((o) => `<option value="${o.value}" ${user.level === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
                   </select>${icon('down', 16)}</div>
                 </div>
+                ${cloudMode ? `<label class="check-line leaderboard-toggle">
+                  <input type="checkbox" name="leaderboardOptIn" ${user.leaderboardOptIn !== false ? 'checked' : ''}>
+                  <span class="check-box">${icon('check', 12)}</span>
+                  <span>参与训练排行榜，昵称和本周训练数据会展示给其他用户</span>
+                </label>` : ''}
               </div>
               <p class="form-error" id="profile-error" role="alert"></p>
               <div class="profile-form-foot">
@@ -2553,6 +2619,278 @@ async function handleAddRecord(form) {
   }
 }
 
+function ensureLeaderboard() {
+  if (api.mode !== 'supabase') return;
+  if (typeof api.getLeaderboard !== 'function') {
+    state.leaderboardError = '互动榜服务尚未配置';
+    return;
+  }
+  const week = weekRange();
+  if (state.leaderboard && state.leaderboardWeek === week.start) return;
+  if (state.leaderboardLoading || state.leaderboardError) return;
+  state.leaderboardLoading = true;
+  state.leaderboardError = null;
+  api.getLeaderboard(week.start, week.end)
+    .then((rows) => {
+      state.leaderboard = Array.isArray(rows) ? rows : [];
+      state.leaderboardWeek = week.start;
+    })
+    .catch((error) => {
+      state.leaderboardError = error.message || '排行榜加载失败';
+    })
+    .finally(() => {
+      state.leaderboardLoading = false;
+      if (state.route === 'leaderboard') render();
+    });
+}
+
+function renderLeaderboard() {
+  if (api.mode !== 'supabase') {
+    return `<div class="empty-state">
+      <span class="empty-icon">${icon('trophy', 32)}</span>
+      <h3>互动榜需要云端账号</h3>
+      <p>排行榜、点赞和留言只对所有用户开放，本机版不参与。</p>
+    </div>`;
+  }
+  const week = weekRange();
+  const metric = state.leaderboardMetric === 'load' ? 'load' : 'minutes';
+  const rows = [...(state.leaderboard || [])].sort((a, b) => {
+    const av = Number(a[metric]) || 0;
+    const bv = Number(b[metric]) || 0;
+    if (bv !== av) return bv - av;
+    return (Number(b.likes) || 0) - (Number(a.likes) || 0);
+  });
+  const loading = state.leaderboardLoading && !state.leaderboard;
+  const error = state.leaderboardError && !state.leaderboard;
+  const me = rows.find((r) => r.user_id === state.user.id);
+
+  const list = loading
+    ? `<div class="lb-loading">${icon('spark', 18)} 正在读取本周榜单…</div>`
+    : error
+      ? `<div class="empty-state"><span class="empty-icon">${icon('info', 28)}</span><h3>排行榜暂时不可用</h3><p>${esc(state.leaderboardError)}</p><button class="btn btn-ghost btn-sm" data-action="reload-leaderboard">重新加载</button></div>`
+      : rows.length
+        ? rows.map((row, index) => {
+          const isMe = row.user_id === state.user.id;
+          const initial = (row.nickname || '?').trim().charAt(0);
+          const rank = index + 1;
+          const value = metric === 'load' ? Number(row.load) || 0 : Number(row.minutes) || 0;
+          return `<div class="lb-row ${isMe ? 'me' : ''} ${rank <= 3 ? `top-${rank}` : ''}">
+            <span class="lb-rank">${rank <= 3 ? icon('trophy', 16) : `#${rank}`}</span>
+            <span class="avatar lb-avatar">${esc(initial)}</span>
+            <div class="lb-user">
+              <strong>${esc(row.nickname || '训练伙伴')}${isMe ? '<em>你</em>' : ''}</strong>
+              <span>${Number(row.sessions) || 0} 次训练 · ${fmtNumber(Number(row.calories) || 0)} kcal · 负荷 ${fmtNumber(Number(row.load) || 0)}</span>
+            </div>
+            <div class="lb-score"><strong>${fmtNumber(value)}</strong><span>${metric === 'load' ? '负荷' : '分钟'}</span></div>
+            <div class="lb-actions">
+              ${isMe ? '<span class="lb-self">我的位置</span>' : `<button type="button" class="lb-action ${row.liked_by_me ? 'active' : ''}" data-action="like-entry" data-user="${row.user_id}" data-week="${week.start}" aria-label="点赞">${icon('heart', 14)}<em>${Number(row.likes) || 0}</em></button>`}
+              <button type="button" class="lb-action" data-action="open-comments" data-user="${row.user_id}" data-week="${week.start}" data-nickname="${esc(row.nickname || '训练伙伴')}" aria-label="留言">${icon('comment', 14)}<em data-comment-count="${row.user_id}">${Number(row.comments) || 0}</em></button>
+            </div>
+          </div>`;
+        }).join('')
+        : `<div class="empty-state">
+            <span class="empty-icon">${icon('trophy', 30)}</span>
+            <h3>本周还没有人上榜</h3>
+            <p>完成一次训练，成为本周第一个上榜的人。</p>
+            <button class="btn btn-primary btn-sm" data-action="add-record">${icon('plus', 15)} 记录一次训练</button>
+          </div>`;
+
+  return `
+    <div class="leaderboard-view">
+      <div class="page-head">
+        <div>
+          <span class="eyebrow">COMMUNITY · ${week.start.slice(5).replace('-', '/')} – ${week.end.slice(5).replace('-', '/')}</span>
+          <h1>训练互动榜</h1>
+          <p>和所有跃迹用户一起训练。只展示参与排行榜的昵称与本周汇总，不公开具体训练详情。</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn btn-ghost" data-action="reload-leaderboard">${icon('refresh', 15)} 刷新</button>
+          <button class="btn btn-primary" data-action="share-app">${icon('share', 15)} 分享本周</button>
+        </div>
+      </div>
+
+      <div class="lb-summary">
+        <div><span>本周参与</span><strong>${rows.length}<em> 人</em></strong></div>
+        <div><span>我的位置</span><strong>${me ? `#${rows.indexOf(me) + 1}` : '未上榜'}</strong></div>
+        <div><span>我的本周</span><strong>${me ? `${fmtNumber(Number(me.minutes) || 0)} <em>分钟</em>` : '—'}</strong></div>
+        <div class="lb-metric-tabs">
+          <button class="${metric === 'minutes' ? 'active' : ''}" data-action="leaderboard-metric" data-metric="minutes">本周时长</button>
+          <button class="${metric === 'load' ? 'active' : ''}" data-action="leaderboard-metric" data-metric="load">本周负荷</button>
+        </div>
+      </div>
+
+      <article class="panel lb-panel">
+        <div class="lb-head"><span>排名</span><span>训练者</span><span>${metric === 'load' ? '负荷' : '时长'}</span><span>互动</span></div>
+        <div class="lb-list">${list}</div>
+      </article>
+
+      <p class="lb-note">${icon('shield', 13)} 只显示昵称与本周训练汇总；可在「我的 → 档案」关闭排行榜参与。留言请保持友善。</p>
+    </div>`;
+}
+
+async function toggleLeaderboardLike(button) {
+  if (!state.leaderboard || !button) return;
+  const toUser = button.dataset.user;
+  const week = button.dataset.week;
+  button.disabled = true;
+  try {
+    const result = await api.toggleLike(toUser, week);
+    const row = state.leaderboard.find((r) => r.user_id === toUser);
+    if (row) {
+      row.liked_by_me = Boolean(result.liked);
+      row.likes = Math.max(0, (Number(row.likes) || 0) + (result.liked ? 1 : -1));
+    }
+    render();
+    toast(result.liked ? '已点赞' : '已取消点赞', 'success');
+  } catch (error) {
+    button.disabled = false;
+    toast(error.message || '点赞失败', 'error');
+  }
+}
+
+function openComments(toUser, week, nickname) {
+  if (api.mode !== 'supabase' || !toUser || !week) return;
+  state.commentsTarget = { toUser, week, nickname };
+  openModal(`
+    ${modalHead('COMMUNITY', `给 ${esc(nickname)} 留言`, '只显示昵称，不公开手机号和训练详情。')}
+    <div class="comments-list" id="comments-list"><div class="mini-empty">正在加载留言…</div></div>
+    <form id="comment-form" data-to-user="${toUser}" data-week="${week}" novalidate>
+      <div class="field">
+        <label>留言<span class="optional">最多 240 字</span></label>
+        <textarea name="body" rows="3" maxlength="240" placeholder="说一句鼓励的话…" required></textarea>
+      </div>
+      <p class="form-error" id="comment-error" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-action="close-modal">关闭</button>
+        <button type="submit" class="btn btn-primary">发送留言 ${icon('arrow', 15)}</button>
+      </div>
+    </form>`, 'modal--form');
+  loadComments();
+}
+
+async function loadComments() {
+  const list = document.getElementById('comments-list');
+  const target = state.commentsTarget;
+  if (!list || !target) return;
+  list.innerHTML = '<div class="mini-empty">正在加载留言…</div>';
+  try {
+    const comments = await api.getComments(target.toUser, target.week);
+    list.innerHTML = comments.length
+      ? comments.map((comment) => `<div class="comment-row">
+          <span class="avatar comment-avatar">${esc((comment.author_nickname || '?').trim().charAt(0))}</span>
+          <div class="comment-main">
+            <div><strong>${esc(comment.author_nickname || '训练伙伴')}</strong><span>${esc(formatCommentTime(comment.created_at))}</span></div>
+            <p>${esc(comment.body)}</p>
+          </div>
+          ${comment.isMine ? `<button type="button" class="comment-delete" data-action="delete-comment" data-id="${comment.id}" aria-label="删除留言">${icon('trash', 13)}</button>` : ''}
+        </div>`).join('')
+      : '<div class="mini-empty">还没有留言，做第一个鼓励他的人。</div>';
+  } catch (error) {
+    list.innerHTML = `<div class="mini-empty">${esc(error.message || '留言加载失败')}</div>`;
+  }
+}
+
+function formatCommentTime(value) {
+  try {
+    return new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+}
+
+async function handleCommentSubmit(form) {
+  const body = String(form.elements.body.value || '').trim();
+  const err = document.getElementById('comment-error');
+  const fail = (message) => { if (err) { err.textContent = message; err.classList.add('show'); } };
+  if (!body) return fail('留言不能为空');
+  if (body.length > 240) return fail('留言不能超过 240 字');
+  const restore = setBusy(form.querySelector('button[type="submit"]'), '发送中…');
+  try {
+    await api.addComment(form.dataset.toUser, form.dataset.week, body, state.user.nickname);
+    form.reset();
+    const row = state.leaderboard?.find((r) => r.user_id === form.dataset.toUser);
+    if (row) row.comments = (Number(row.comments) || 0) + 1;
+    document.querySelectorAll(`[data-comment-count="${form.dataset.toUser}"]`).forEach((el) => { el.textContent = String(Number(el.textContent) + 1); });
+    await loadComments();
+    restore();
+    toast('留言已发送', 'success');
+  } catch (error) {
+    fail(error.message || '留言发送失败');
+    restore();
+  }
+}
+
+async function deleteComment(id) {
+  const target = state.commentsTarget;
+  try {
+    await api.deleteComment(id);
+    if (target) {
+      const row = state.leaderboard?.find((r) => r.user_id === target.toUser);
+      if (row) row.comments = Math.max(0, (Number(row.comments) || 0) - 1);
+      document.querySelectorAll(`[data-comment-count="${target.toUser}"]`).forEach((el) => { el.textContent = String(Math.max(0, Number(el.textContent) - 1)); });
+    }
+    await loadComments();
+    toast('留言已删除', 'success');
+  } catch (error) {
+    toast(error.message || '删除失败', 'error');
+  }
+}
+
+function copyShareText(payload) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(payload)
+      .then(() => toast('分享文案已复制', 'success'))
+      .catch(() => copyShareTextFallback(payload));
+  }
+  return copyShareTextFallback(payload);
+}
+
+function copyShareTextFallback(payload) {
+  const area = document.createElement('textarea');
+  area.value = payload;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  try { document.execCommand('copy'); toast('分享文案已复制', 'success'); }
+  catch { toast('请手动复制浏览器地址分享', 'info'); }
+  area.remove();
+  return Promise.resolve();
+}
+
+function shareText(text) {
+  const url = `${location.origin}${location.pathname}`;
+  const payload = `${text}\n${url}`;
+  if (navigator.share) {
+    return navigator.share({ title: '跃迹 YUEJI', text, url }).catch((error) => {
+      if (error?.name === 'AbortError') return undefined;
+      return copyShareText(payload);
+    });
+  }
+  return copyShareText(payload);
+}
+
+function shareRecord(id) {
+  const a = state.activities.find((x) => x.id === id);
+  if (!a) return;
+  const sport = SPORTS[a.type] || SPORTS.other;
+  const bits = [sport.label, fmtDate(a.date, 'md'), fmtDuration(a.duration)];
+  if (activityDistance(a) > 0) bits.push(fmtDistance(a.distance));
+  bits.push(`${fmtNumber(activityCalories(a, state.user))} kcal`);
+  const text = `我在跃迹完成了${bits.join(' · ')}，训练负荷 ${fmtNumber(sessionLoad(a))}。一起动起来！`;
+  shareText(text).catch((error) => toast(error.message || '分享失败', 'error'));
+}
+
+function shareApp() {
+  let text = '我在跃迹记录训练、看趋势，也想要你的鼓励。一起动起来！';
+  const me = state.leaderboard?.find((r) => r.user_id === state.user.id);
+  if (state.route === 'leaderboard' && me) {
+    text = `我本周在跃迹训练了 ${fmtNumber(Number(me.minutes) || 0)} 分钟，排名第 ${state.leaderboard.indexOf(me) + 1}。来和我一起训练！`;
+  }
+  shareText(text).catch((error) => toast(error.message || '分享失败', 'error'));
+}
+
 function openRecordModal(id) {
   const a = state.activities.find((x) => x.id === id);
   if (!a) return;
@@ -2659,6 +2997,7 @@ function openRecordModal(id) {
     ${a.notes ? `<div class="detail-notes"><span>备注</span><p>${esc(a.notes)}</p></div>` : ''}
     <div class="modal-actions">
       <button type="button" class="btn btn-ghost btn-danger-ghost" data-action="delete-record" data-id="${a.id}">${icon('trash', 15)} 删除</button>
+      <button type="button" class="btn btn-ghost" data-action="share-record" data-id="${a.id}">${icon('share', 15)} 分享</button>
       <button type="button" class="btn btn-ghost" data-action="edit-record" data-id="${a.id}">${icon('edit', 15)} 编辑记录</button>
       <button type="button" class="btn btn-primary" data-action="close-modal">完成</button>
     </div>`, 'modal--detail');
@@ -3048,7 +3387,8 @@ async function handleProfileSave(form) {
     ageBand: String(fd.get('ageBand')),
     goal: String(fd.get('goal')),
     freq: Number(fd.get('freq')),
-    level: String(fd.get('level'))
+    level: String(fd.get('level')),
+    leaderboardOptIn: fd.get('leaderboardOptIn') === 'on'
   };
   const restore = setBusy(form.querySelector('button[type="submit"]'), '保存中…');
   try {
