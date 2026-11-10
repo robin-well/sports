@@ -182,9 +182,9 @@ as $$
   select
     p.user_id,
     p.nickname,
-    coalesce(sum(a.duration), 0)::bigint as minutes,
+    coalesce(sum((a.data->>'duration')::numeric), 0)::bigint as minutes,
     count(a.id)::bigint as sessions,
-    coalesce(sum(a.duration * coalesce((a.data->>'rpe')::numeric, 7)), 0)::bigint as load,
+    coalesce(sum(((a.data->>'duration')::numeric) * coalesce((a.data->>'rpe')::numeric, 7)), 0)::bigint as load,
     coalesce(sum((a.data->>'calories')::numeric), 0)::bigint as calories,
     (select count(*) from public.leaderboard_likes l
       where l.to_user = p.user_id and l.week_start = p_start)::bigint as likes,
