@@ -120,6 +120,20 @@ function bindGlobalEvents() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   });
+  let lastFocusRefresh = 0;
+  document.addEventListener('visibilitychange', async () => {
+    if (document.hidden || !state.user?.profile || state.booting) return;
+    if (modalRoot.innerHTML.trim()) return; // 不打断正在编辑的弹窗
+    if (Date.now() - lastFocusRefresh < 15000) return;
+    lastFocusRefresh = Date.now();
+    try {
+      await refreshBootstrap();
+      render();
+    } catch {
+      // 网络波动时保留当前页面，下一次聚焦再试
+    }
+  });
+
   document.addEventListener('dragover', (e) => {
     if (modalRoot.querySelector('#dropzone')) {
       e.preventDefault();
@@ -1020,7 +1034,7 @@ function navigate(route) {
 function renderShell() {
   const user = state.user;
   const browserMode = api.mode === 'browser';
-  const guidance = computeGuidance(user, state.activities);
+  const guidance = computeGuidance(user, state.activities, state.weights);
   const snap = guidance.snapshot;
   const meta = ROUTE_META[state.route] || ROUTE_META.overview;
   const initial = (user.nickname || '跃').trim().charAt(0).toUpperCase();
@@ -1172,7 +1186,7 @@ function renderOverview(guidance) {
         <article class="coach-card" style="--accent:${sport.color}">
           <div class="coach-head">
             <span class="tag tag--lime">${icon('spark', 13)} 今日指引</span>
-            <span class="coach-mode">${guidance.mode === 'recover' ? '恢复优先' : guidance.mode === 'start' ? '从零开始' : guidance.mode === 'restart' ? '找回节奏' : '按计划推进'}</span>
+            <span class="coach-mode">${guidance.mode === 'recover' ? '恢复优先' : guidance.mode === 'start' ? '从零开始' : guidance.mode === 'restart' ? '找回节奏' : guidance.mode === 'adjust' ? '动态调整' : '按计划推进'}</span>
           </div>
           <div class="coach-main">
             <div class="coach-copy">
@@ -1198,6 +1212,9 @@ function renderOverview(guidance) {
             </div>
           </div>
           <div class="coach-reason">${icon('info', 14)} <span>${guidance.reason}</span></div>
+          ${guidance.insights?.length ? `<div class="coach-insights">
+            ${guidance.insights.slice(0, 3).map((text) => `<span>${icon('spark', 11)}${esc(text)}</span>`).join('')}
+          </div>` : ''}
           <div class="coach-tips">
             ${session.tips.map((tip, i) => `<span><em>0${i + 1}</em>${tip}</span>`).join('')}
           </div>
@@ -1867,6 +1884,9 @@ function renderGuidance(guidance) {
           <span class="eyebrow">YOUR BLUEPRINT</span>
           <h2>每周 ${guidance.target} 分钟，<br>把目标拆成今天的一小步。</h2>
           <p>${guidance.reason}</p>
+          ${guidance.insights?.length ? `<div class="guidance-insights">
+            ${guidance.insights.slice(0, 3).map((text) => `<span>${icon('spark', 11)}${esc(text)}</span>`).join('')}
+          </div>` : ''}
           <div class="blueprint-load">
             <span class="load-pill tone-${guidance.load.status.tone}">${guidance.load.status.label}</span>
             <span>近 7 天负荷 ${fmtNumber(guidance.load.acute)}，4 周周均 ${fmtNumber(guidance.load.chronic)}</span>

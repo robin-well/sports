@@ -453,19 +453,40 @@ function sessionFor(type, user, extra = {}) {
   };
 }
 
-export function computeGuidance(user, activities) {
+export function computeGuidance(user, activities, weights = []) {
   if (!user) return null;
   const goal = GOALS[user.goal] || GOALS.health;
   const target = weeklyTargetMinutes(user);
-  const snapshot = weeklySnapshot(activities, user);
-  const prev = weeklySnapshot(activities, user, -1);
+  const currentWeight = latestWeight(user, weights);
+  const body = { ...user, weight: currentWeight || user.weight };
+  const snapshot = weeklySnapshot(activities, body);
+  const prev = weeklySnapshot(activities, body, -1);
   const sorted = sortActivities(activities);
   const last = sorted[0] || null;
-  const daysSinceLast = last ? Math.round((parseDate(todayKey()) - parseDate(last.date)) / 86400000) : null;
+  const today = todayKey();
+  const todaySessions = sorted.filter((a) => a.date === today);
+  const todayMinutes = todaySessions.reduce((sum, a) => sum + (Number(a.duration) || 0), 0);
+  const todayTypes = new Set(todaySessions.map((a) => a.type));
+  const daysSinceLast = last ? Math.round((parseDate(today) - parseDate(last.date)) / 86400000) : null;
   const streak = currentStreak(activities);
   const progress = target ? clamp(snapshot.minutes / target, 0, 1) : 0;
-  const zones = hrZones(user);
-  const load = trainingLoad(activities, user);
+  const zones = hrZones(body);
+  const load = trainingLoad(activities, body);
+  const trend = weightTrend(user, weights);
+  const bmi = bmiOf(body);
+  const insights = [];
+
+  const recentStrength = sorted.find((a) => a.type === 'strength'
+    && a.date >= dateKey(addDays(new Date(), -2))
+    && Array.isArray(a.strength) && a.strength.length);
+  const strengthParts = recentStrength
+    ? [...new Set(recentStrength.strength.map((ex) => ex.part).filter(Boolean))]
+    : [];
+  const upperParts = strengthParts.filter((part) => ['chest', 'back', 'shoulders', 'arms'].includes(part));
+  const lowerParts = strengthParts.filter((part) => ['legs', 'glutes'].includes(part));
+  const upperOnly = upperParts.length > 0 && lowerParts.length === 0;
+  const lowerOnly = lowerParts.length > 0 && upperParts.length === 0;
+  const partLabels = strengthParts.map((part) => STRENGTH_PART_LABELS[part] || '全身');
 
   let mode = 'train';
   let reason = '';
@@ -473,48 +494,79 @@ export function computeGuidance(user, activities) {
   if (!last) {
     mode = 'start';
     reason = '还没有运动记录，从一次轻量训练开始，先让身体动起来。';
-  } else if (daysSinceLast === 0 && snapshot.minutes >= 30) {
+  } else if (todayMinutes >= 20) {
     mode = 'recover';
-    reason = '今天已经完成训练，恢复也是计划的一部分。';
+    reason = `今天已经完成 ${todayMinutes} 分钟训练，恢复也是计划的一部分。`;
   } else if (snapshot.minutes >= target && snapshot.sessions >= (user.freq || 4)) {
     mode = 'recover';
     reason = '本周目标已经达成，给身体留出修复和生长的时间。';
+  } else if (streak >= 4 && todayMinutes === 0) {
+    mode = 'recover';
+    reason = `你已经连续训练 ${streak} 天，今天优先主动恢复，避免把疲劳带进下一周。`;
   } else if (daysSinceLast >= 5) {
     mode = 'restart';
     reason = `已经 ${daysSinceLast} 天没有训练，先以低强度找回节奏，不建议直接上强度。`;
   } else if (load.ratio > 1.5) {
     mode = 'recover';
     reason = `近 7 天训练负荷是 4 周平均的 ${load.ratio.toFixed(2)} 倍，增长过快，今天优先恢复。`;
+  } else if (load.ratio > 1.3) {
+    mode = 'adjust';
+    reason = `近 7 天负荷偏高（ACWR ${load.ratio.toFixed(2)}），今天把强度降下来，保留一次低强度活动。`;
+  }
+
+  if (todayMinutes > 0) {
+    insights.push(`今天已完成 ${todayMinutes} 分钟：${[...todayTypes].map((t) => (SPORTS[t] || SPORTS.other).label).join(' / ')}`);
+  }
+  if (partLabels.length) {
+    insights.push(`最近 48 小时练过${partLabels.join('、')}，接下来避免同一部位连续负重`);
+  }
+  if (load.ratio > 1.3) {
+    insights.push(`近 7 天负荷 / 4 周平均 = ${load.ratio.toFixed(2)}，高于平稳区间`);
+  }
+  if (trend != null && Math.abs(trend) >= 0.5) {
+    const dir = trend > 0 ? '上升' : '下降';
+    insights.push(`近 30 天体重${dir} ${Math.abs(trend).toFixed(1)} kg`);
+  }
+  if (bmi && bmi >= 28) {
+    insights.push('当前 BMI 偏高，今天优先选择骑行、游泳或快走等低冲击有氧');
+  }
+  if (streak >= 3) {
+    insights.push(`已连续训练 ${streak} 天，注意睡眠与恢复`);
   }
 
   let session;
   if (mode === 'recover' || mode === 'start' || mode === 'restart') {
-    session = mode === 'start'
-      ? sessionFor('running', user, {
-          title: '第一次 · 走跑结合',
-          short: '走跑结合',
-          duration: 25,
-          desc: '快走 3 分钟 + 慢跑 2 分钟，循环 4 组。重点不是距离，而是完成。',
-          intensity: '低强度',
-          tips: ['穿一双合脚的缓震跑鞋', '用能聊天的速度慢跑', '结束后记录感受，不追求配速']
-        })
-      : mode === 'restart'
-        ? sessionFor('running', user, {
-            title: '找回节奏 · 轻松跑',
-            short: '轻松跑',
-            duration: 25,
-            desc: '用比平时慢 30–60 秒的配速跑 25 分钟，心率不超过二区上限。',
-            intensity: '低强度',
-            tips: ['先快走 5 分钟唤醒身体', '感觉吃力就改为走跑结合', '这次训练只求恢复习惯']
-          })
-        : sessionFor('yoga', user, {
-            title: '主动恢复 · 拉伸与呼吸',
-            short: '主动恢复',
-            duration: 25,
-            desc: '用低强度活动促进血液循环：散步 15 分钟 + 髋肩拉伸 10 分钟。',
-            intensity: '恢复',
-            tips: ['不安排力量与高强度有氧', '补充水分与电解质', '保证 7–9 小时睡眠']
-          });
+    if (mode === 'start') {
+      session = sessionFor('running', body, {
+        title: '第一次 · 走跑结合',
+        short: '走跑结合',
+        duration: 25,
+        desc: '快走 3 分钟 + 慢跑 2 分钟，循环 4 组。重点不是距离，而是完成。',
+        intensity: '低强度',
+        tips: ['穿一双合脚的缓震跑鞋', '用能聊天的速度慢跑', '结束后记录感受，不追求配速']
+      });
+    } else if (mode === 'restart') {
+      session = sessionFor('running', body, {
+        title: '找回节奏 · 轻松跑',
+        short: '轻松跑',
+        duration: 25,
+        desc: '用比平时慢 30–60 秒的配速跑 25 分钟，心率不超过二区上限。',
+        intensity: '低强度',
+        tips: ['先快走 5 分钟唤醒身体', '感觉吃力就改为走跑结合', '这次训练只求恢复习惯']
+      });
+    } else {
+      const focus = upperOnly ? '上肢' : lowerOnly ? '下肢' : null;
+      session = sessionFor('yoga', body, {
+        title: focus ? `主动恢复 · ${focus}放松` : '主动恢复 · 拉伸与呼吸',
+        short: '主动恢复',
+        duration: 25,
+        desc: focus
+          ? `用低强度活动促进${focus}恢复：散步 15 分钟 + ${focus}拉伸 10 分钟，不安排负重。`
+          : '用低强度活动促进血液循环：散步 15 分钟 + 髋肩拉伸 10 分钟。',
+        intensity: '恢复',
+        tips: ['不安排力量与高强度有氧', '补充水分与电解质', '保证 7–9 小时睡眠']
+      });
+    }
   } else {
     const counts = {};
     for (const key of Object.keys(goal.quotas)) {
@@ -529,10 +581,39 @@ export function computeGuidance(user, activities) {
         if (deficitB !== deficitA) return deficitB - deficitA;
         return quotaKeys.indexOf(a) - quotaKeys.indexOf(b);
       });
-    const pick = remaining[0] || 'yoga';
-    session = sessionFor(pick, user);
+    let pick = remaining[0] || 'yoga';
+    if (todayTypes.has(pick)) {
+      pick = remaining.find((key) => !todayTypes.has(key)) || 'yoga';
+    }
+
+    if (pick === 'strength' && upperOnly) {
+      mode = 'adjust';
+      reason = `最近 48 小时练过${partLabels.join('、')}，今天把力量换成下肢，避免上肢连续负重。`;
+      session = sessionFor('strength', body, {
+        title: '下肢力量 · 深蹲与髋',
+        short: '下肢力量',
+        duration: 40,
+        desc: '深蹲、罗马尼亚硬拉、臀桥各 3 组，重量以最后两次仍能保持动作为准。',
+        intensity: '中强度',
+        tips: ['先做 5 分钟髋部与脚踝活动', '深蹲和硬拉组间休息 90 秒', '结束后补充蛋白质，不用再练上肢']
+      });
+    } else if (pick === 'strength' && lowerOnly) {
+      mode = 'adjust';
+      reason = `最近 48 小时练过${partLabels.join('、')}，今天把力量换成上肢，让下肢有时间恢复。`;
+      session = sessionFor('strength', body, {
+        title: '上肢推拉 · 胸背肩',
+        short: '上肢力量',
+        duration: 40,
+        desc: '卧推、划船、肩推各 3 组，动作质量优先，最后一组保留 2 次余力。',
+        intensity: '中强度',
+        tips: ['先做肩胛与胸椎活动', '推和拉交替进行，组间休息 90 秒', '不要为了重量牺牲动作幅度']
+      });
+    } else {
+      session = sessionFor(pick, body);
+    }
+
     if (goal.key === 'endurance' && pick === 'running' && snapshot.list.filter((a) => a.type === 'running').length >= 2) {
-      session = sessionFor('running', user, {
+      session = sessionFor('running', body, {
         title: '长距离慢跑 · 耐力',
         short: '长距离慢跑',
         duration: 70,
@@ -540,18 +621,56 @@ export function computeGuidance(user, activities) {
         intensity: '中强度'
       });
     }
+
+    if (goal.key === 'loss' && trend != null && trend >= 0.5) {
+      insights.push('体重趋势向上，今天优先把有氧时间拉够，并检查饮食缺口');
+      if (session.type === 'running' || session.type === 'cycling') {
+        session = sessionFor(session.type, body, {
+          ...session,
+          title: `${session.short} · 稳态有氧`,
+          duration: Math.max(session.duration, 45),
+          desc: '保持能对话的强度连续完成，不追求速度；今天的目标是稳定消耗，而不是冲刺。'
+        });
+      }
+    } else if (goal.key === 'muscle' && trend != null && trend <= -0.5) {
+      insights.push('体重在下降，今天优先力量与恢复，蛋白质不要低于目标');
+      if (session.type !== 'strength') {
+        session = sessionFor('strength', body, {
+          title: '全身力量 · 保留肌肉',
+          short: '力量',
+          duration: 40,
+          desc: '深蹲、推举、划船各 3 组，重量不必冲极限，先把动作和蛋白质补足。',
+          intensity: '中强度'
+        });
+      }
+    }
+
+    if (bmi && bmi >= 28 && session.type === 'running') {
+      session = sessionFor('cycling', body, {
+        title: '低冲击有氧 · 骑行',
+        short: '骑行',
+        duration: 45,
+        desc: '用平缓路线保持 45 分钟中等强度，减少跑步对膝踝的冲击。',
+        intensity: '低–中强度'
+      });
+      insights.push('用骑行替代部分跑步，降低关节冲击');
+    }
+
     const left = Math.max(0, target - snapshot.minutes);
-    reason = left > 0
-      ? `本周已训练 ${Math.round(snapshot.minutes)} 分钟，距离目标还差 ${Math.round(left)} 分钟。`
-      : '本周训练量已达标，可以补一次低强度活动保持节奏。';
+    if (!reason) {
+      reason = left > 0
+        ? `本周已训练 ${Math.round(snapshot.minutes)} 分钟，距离目标还差 ${Math.round(left)} 分钟。`
+        : '本周训练量已达标，可以补一次低强度活动保持节奏。';
+    }
   }
 
   return {
     goal, target, snapshot, prev, progress, streak, last, daysSinceLast,
     mode, reason, session, zones, load,
+    currentWeight, weight: currentWeight, weightTrend: trend, bmi,
+    todaySessions, todayMinutes, strengthParts, insights,
     remaining: Math.max(0, target - snapshot.minutes),
-    calorie: caloriePlan(user),
-    weight: latestWeight(user)
+    calorie: caloriePlan(body)
   };
 }
 
